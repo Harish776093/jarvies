@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Jarvies AI Assistant</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <style>
+    body {
+      margin: 0;
+      background-image: url('https://wallpaper.dog/large/10716563.jpg');
+      background-size: cover;
+      background-position: center;
+      font-family: 'Segoe UI', sans-serif;
+      color: white;
+      height: 100vh;
+    }
+
+    .bottom-panel {
+      position: fixed;
+      bottom: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background-color: rgba(0, 0, 0, 0.4);
+      padding: 10px 16px;
+      border-radius: 12px;
+      width: fit-content;
+      font-size: 0.85em;
+      box-shadow: 0 0 10px rgba(0, 255, 255, 0.4);
+    }
+
+    .bottom-panel button {
+      padding: 10px;
+      font-size: 1.2em;
+      border-radius: 50%;
+      background-color: #00f6ff;
+      color: black;
+      border: none;
+      cursor: pointer;
+      animation: pulse 1.5s infinite ease-in-out;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(1); box-shadow: 0 0 10px #00f6ff; }
+      50% { transform: scale(1.2); box-shadow: 0 0 20px #00d0e0; }
+      100% { transform: scale(1); box-shadow: 0 0 10px #00f6ff; }
+    }
+
+    #status {
+      margin-top: 8px;
+      font-style: italic;
+      color: #ccc;
+    }
+  </style>
+</head>
+<body onload="greetUser()">
+  <div class="bottom-panel">
+    <button onclick="startListening()">🎤</button>
+    <div id="status">Awaiting command...</div>
+  </div>
+
+  <script>
+    function speak(text) {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = "en-US";
+      utterance.rate = 1;
+      utterance.pitch = 1.2;
+      speechSynthesis.speak(utterance);
+      document.getElementById("status").innerText = text;
+    }
+
+    function greetUser() {
+      const name = localStorage.getItem("jarvisName");
+      const hour = new Date().getHours();
+      const greet =
+        hour >= 5 && hour < 12 ? "Good morning" :
+        hour >= 12 && hour < 17 ? "Good afternoon" :
+        hour >= 17 && hour < 21 ? "Good evening" :
+        "Good night!";
+      const intro = name ? `${greet}, ${name}. I am Jarvies, your AI assistant.` :
+                           `${greet}, I am Jarvies. What's your name?`;
+      speak(intro);
+    }
+
+    function startListening() {
+      const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+      recognition.lang = 'en-US';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+      recognition.start();
+
+      document.getElementById("status").innerText = "🎙️ Listening...";
+
+      recognition.onresult = (event) => {
+        const command = event.results[0][0].transcript.toLowerCase();
+        document.getElementById("status").innerText = `Heard: "${command}"`;
+        handleCommand(command);
+      };
+
+      recognition.onerror = () => {
+        speak("I couldn't hear you. Please try again.");
+      };
+    }
+
+    function handleCommand(message) {
+      if (message.includes("my name is")) {
+        const name = message.split("my name is")[1].trim();
+        localStorage.setItem("jarvisName", name);
+        speak(`Nice to meet you, ${name}`);
+
+      } else if (message.includes("what's my name")) {
+        const name = localStorage.getItem("jarvisName");
+        name ? speak(`Your name is ${name}`) :
+               speak("I don't know yet. Please say 'my name is...'");
+
+      } else if (message.includes("open google")) {
+        speak("Opening Google.");
+        window.open("https://www.google.com", "_blank");
+
+      } else if (message.startsWith("search") || message.includes("open on google")) {
+        const query = message.replace(/search|open on google/g, "").trim();
+        speak(`Searching for ${query}`);
+
+        fetch(`https://corsproxy.io/?https://www.google.com/search?q=${encodeURIComponent(query)}`)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, "text/html");
+            const snippets = Array.from(doc.querySelectorAll("span"))
+              .map(e => e.textContent)
+              .filter(t => t.length > 30)
+              .slice(0, 4)
+              .join(". ");
+            speak(`Here’s what I found: ${snippets}`);
+            window.open(`https://www.google.com/search?q=${encodeURIComponent(query)}`, "_blank");
+          })
+          .catch(() => {
+            speak("I couldn't read the results, but I opened Google for you.");
+            window.open(`https://www.google.com/search?q=${encodeURIComponent(query)}`, "_blank");
+          });
+
+      } else if (message.includes("play") && message.includes("on youtube")) {
+        const query = message.replace("play", "").replace("on youtube", "").trim().replace(/ /g, "+");
+        speak(`Playing ${query.replace(/\+/g, " ")}`);
+        window.open(`https://www.youtube.com/results?search_query=${query}`, "_blank");
+
+      } else if (message.includes("time")) {
+        const time = new Date().toLocaleTimeString();
+        speak(`The current time is ${time}`);
+
+      } else if (message.includes("date")) {
+        const date = new Date().toLocaleDateString();
+        speak(`Today's date is ${date}`);
+
+      } else if (message.includes("open notepad") || message.includes("launch calculator")) {
+        fetch("http://localhost:5000/launch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ command: message })
+        })
+        .then(res => res.text())
+        .then(msg => speak(msg))
+        .catch(() => speak("Unable to reach desktop assistant"));
+
+      } else {
+        speak("Let me look that up for you.");
+        window.open(`https://www.google.com/search?q=${encodeURIComponent(message)}`, "_blank");
+      }
+    }
+  </script>
+</body>
+</html>
+
